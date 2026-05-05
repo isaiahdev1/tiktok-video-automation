@@ -1,0 +1,21 @@
+# Secrets & credentials
+.env
+tiktok_cookies.json
+youtube_cookies.json
+youtube_token.json
+client_secrets.json
+client_secret_*.json
+tiktok_profile/
+
+# Generated output (large files, not needed in repo)
+output/
+
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.Python
+
+# macOS
+.DS_Store

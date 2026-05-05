@@ -1,0 +1,28 @@
+anthropic>=0.40.0
+requests>=2.31.0
+python-dotenv>=1.0.0
+tqdm>=4.66.0
+
+# TTS
+edge-tts>=6.1.9
+
+# Captions
+faster-whisper>=1.0.0
+
+# TikTok upload
+playwright>=1.44.0
+
+# YouTube upload
+google-api-python-client>=2.100.0
+google-auth>=2.23.0
+google-auth-oauthlib>=1.1.0
+google-auth-httplib2>=0.1.1
+
+# Trending topics
+pytrends>=4.9.2
+
+# Thumbnail generation
+Pillow>=10.0.0
+
+# AI image generation (Imagen 3 via Gemini)
+google-genai>=1.0.0

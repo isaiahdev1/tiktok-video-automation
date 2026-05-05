@@ -1,0 +1,59 @@
+name: TikTok Video Automation
+
+on:
+  schedule:
+    # 4x daily: 9am, 1pm, 5pm, 9pm UTC
+    - cron: "0 9 * * *"
+    - cron: "0 13 * * *"
+    - cron: "0 17 * * *"
+    - cron: "0 21 * * *"
+  workflow_dispatch: # allow manual runs from GitHub UI
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg imagemagick
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install Playwright browser
+        run: |
+          python -m playwright install chromium
+          python -m playwright install-deps chromium
+
+      - name: Write secrets to files
+        env:
+          TIKTOK_COOKIES: ${{ secrets.TIKTOK_COOKIES }}
+          YOUTUBE_TOKEN: ${{ secrets.YOUTUBE_TOKEN }}
+          YOUTUBE_CLIENT_SECRETS: ${{ secrets.YOUTUBE_CLIENT_SECRETS }}
+        run: |
+          echo "$TIKTOK_COOKIES" > tiktok_cookies.json
+          echo "$YOUTUBE_TOKEN" > youtube_token.json
+          echo "$YOUTUBE_CLIENT_SECRETS" > client_secrets.json
+
+      - name: Run automation
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          ELEVENLABS_VOICE_ID: ${{ secrets.ELEVENLABS_VOICE_ID }}
+          CHANNEL_NAME: ${{ secrets.CHANNEL_NAME }}
+          NICHE: ${{ secrets.NICHE }}
+          TIKTOK_HEADLESS: "1"
+        run: python main.py --batch 1
