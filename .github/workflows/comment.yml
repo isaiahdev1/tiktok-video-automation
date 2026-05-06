@@ -11,7 +11,7 @@ on:
 jobs:
   comment:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
 
     steps:
       - uses: actions/checkout@v4
@@ -35,8 +35,8 @@ jobs:
           TIKTOK_COOKIES: ${{ secrets.TIKTOK_COOKIES }}
         run: echo "$TIKTOK_COOKIES" > tiktok_cookies.json
 
-      - name: Run TikTok FYP commenter
+      - name: Run TikTok commenter
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           TIKTOK_HEADLESS: "1"
-        run: python main.py --comment-fyp 8
+        run: python main.py --comment 8

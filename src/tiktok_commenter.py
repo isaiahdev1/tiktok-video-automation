@@ -82,9 +82,7 @@ def run(max_comments: int = MAX_COMMENTS) -> None:
         # Warm up on FYP first (looks natural), then browse hashtag pages
         print("[commenter] Warming up on FYP...", flush=True)
         page.goto("https://www.tiktok.com/", wait_until="domcontentloaded", timeout=30000)
-        time.sleep(20)
-        page.reload(wait_until="domcontentloaded", timeout=30000)
-        time.sleep(20)
+        time.sleep(8)
 
         if "login" in page.url.lower():
             print("[commenter] Cookies expired — re-export from Chrome.", flush=True)
@@ -239,13 +237,10 @@ Return ONLY the comment. Nothing else."""
 
 
 def _load_video_page(page, url: str) -> bool:
-    """Navigate to a video page with wait + refresh pattern."""
+    """Navigate to a video page and wait for it to settle."""
     try:
         page.goto(url, wait_until="domcontentloaded", timeout=30000)
-        time.sleep(20)
-        page.reload(wait_until="domcontentloaded", timeout=30000)
-        time.sleep(20)
-        # Close any notification panels
+        time.sleep(8)
         page.keyboard.press("Escape")
         time.sleep(1)
         return True

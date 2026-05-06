@@ -199,32 +199,54 @@ def _comment(page, text: str) -> bool:
 
 
 def _scroll_to_next(page) -> None:
-    """Advance to the next video using the down arrow key, retry if stuck."""
-    before_id = page.evaluate("""
-        () => document.querySelectorAll('a[href*="/video/"]')[0]?.href?.split('?')[0] || ''
-    """)
-    before_desc = page.evaluate("""
-        () => document.querySelectorAll('[data-e2e="video-desc"]')[0]?.innerText?.trim()?.slice(0,40) || ''
-    """)
+    """Advance to the next video, trying multiple methods until one works."""
+    before_id = page.evaluate(
+        "() => document.querySelectorAll('a[href*=\"/video/\"]')[0]?.href?.split('?')[0] || ''"
+    )
+    before_desc = page.evaluate(
+        "() => document.querySelectorAll('[data-e2e=\"video-desc\"]')[0]?.innerText?.trim()?.slice(0,40) || ''"
+    )
 
-    for attempt in range(3):
-        page.mouse.click(500, 450)
-        time.sleep(0.3)
-        page.keyboard.press("ArrowDown")
+    def _changed() -> bool:
+        after_id = page.evaluate(
+            "() => document.querySelectorAll('a[href*=\"/video/\"]')[0]?.href?.split('?')[0] || ''"
+        )
+        after_desc = page.evaluate(
+            "() => document.querySelectorAll('[data-e2e=\"video-desc\"]')[0]?.innerText?.trim()?.slice(0,40) || ''"
+        )
+        return (after_id and after_id != before_id) or (after_desc and after_desc != before_desc)
+
+    for attempt in range(4):
+        if attempt == 0:
+            # Method 1: click TikTok's own down-arrow nav button
+            try:
+                btn = page.locator('[data-e2e="arrow-down"], [class*="ButtonBasic"][aria-label*="next" i], [class*="arrow-down"]').first
+                btn.click(timeout=2000)
+            except Exception:
+                page.mouse.wheel(0, 900)
+        elif attempt == 1:
+            # Method 2: mouse wheel on the feed container
+            page.mouse.wheel(0, 900)
+        elif attempt == 2:
+            # Method 3: ArrowDown with explicit focus on body
+            page.evaluate("document.body.focus()")
+            page.keyboard.press("ArrowDown")
+        else:
+            # Method 4: JS scroll the feed container directly
+            page.evaluate("""
+                () => {
+                    const feed = document.querySelector('[class*="DivVideoFeedV2"], [data-e2e="recommend-list-item-container"], main');
+                    if (feed) feed.scrollBy(0, window.innerHeight);
+                    else window.scrollBy(0, window.innerHeight);
+                }
+            """)
+
         time.sleep(random.uniform(2.5, 3.5))
+        if _changed():
+            return
 
-        after_id = page.evaluate("""
-            () => document.querySelectorAll('a[href*="/video/"]')[0]?.href?.split('?')[0] || ''
-        """)
-        after_desc = page.evaluate("""
-            () => document.querySelectorAll('[data-e2e="video-desc"]')[0]?.innerText?.trim()?.slice(0,40) || ''
-        """)
-
-        if (after_id and after_id != before_id) or (after_desc and after_desc != before_desc):
-            return  # successfully advanced
-
-        if attempt < 2:
-            print("[fyp] Scroll didn't advance, retrying...", flush=True)
+        if attempt < 3:
+            print(f"[fyp] Scroll method {attempt+1} didn't advance, trying next...", flush=True)
 
 
 def _generate_comment(description: str) -> str | None:
