@@ -22,9 +22,15 @@ def run(max_comments: int = MAX_COMMENTS) -> None:
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as p:
+        headless = os.environ.get("TIKTOK_HEADLESS", "0") == "1"
         browser = p.chromium.launch(
-            headless=False,
-            args=["--disable-blink-features=AutomationControlled"],
+            headless=headless,
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+            ],
             ignore_default_args=["--enable-automation"],
         )
         context = browser.new_context(
