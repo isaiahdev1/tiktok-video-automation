@@ -1,6 +1,7 @@
 """Generate a high-retention 60-second video script using Claude."""
 
 import json
+import time
 import anthropic
 
 
@@ -47,11 +48,21 @@ Respond ONLY with valid JSON, no markdown:
   "tags": ["<12-15 highly specific tags>"]
 }}"""
 
-    message = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=2048,
-        messages=[{"role": "user", "content": prompt}],
-    )
+    for attempt in range(5):
+        try:
+            message = client.messages.create(
+                model="claude-sonnet-4-6",
+                max_tokens=2048,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            break
+        except anthropic.APIStatusError as e:
+            if e.status_code == 529 and attempt < 4:
+                wait = 30 * (attempt + 1)
+                print(f"[script] API overloaded, retrying in {wait}s (attempt {attempt+1}/5)...")
+                time.sleep(wait)
+            else:
+                raise
 
     raw = message.content[0].text.strip()
     if raw.startswith("```"):

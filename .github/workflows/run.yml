@@ -13,6 +13,8 @@ jobs:
   post:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
@@ -57,3 +59,12 @@ jobs:
           NICHE: ${{ secrets.NICHE }}
           TIKTOK_HEADLESS: "1"
         run: python main.py --batch 1
+
+      - name: Save topics queue back to repo
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add topics_queue.json
+          git diff --cached --quiet || git commit -m "chore: update topics queue [skip ci]"
+          git push
