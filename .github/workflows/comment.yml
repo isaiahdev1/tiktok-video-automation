@@ -35,8 +35,8 @@ jobs:
           TIKTOK_COOKIES: ${{ secrets.TIKTOK_COOKIES }}
         run: echo "$TIKTOK_COOKIES" > tiktok_cookies.json
 
-      - name: Run TikTok commenter
+      - name: Run TikTok FYP commenter
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           TIKTOK_HEADLESS: "1"
-        run: python main.py --comment 8
+        run: python main.py --comment-fyp 8

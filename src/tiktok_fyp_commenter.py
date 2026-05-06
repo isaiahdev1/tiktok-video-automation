@@ -1,6 +1,7 @@
 """
-FYP commenter — likes and comments on videos directly from the For You page.
-No page navigation. Scrolls through the feed naturally.
+FYP commenter — loads the For You page, scrolls to populate the DOM with
+real FYP videos, scrapes their URLs, then navigates to each one to like
+and comment. Same viral content a normal person would see on the FYP.
 """
 
 from __future__ import annotations
@@ -59,194 +60,154 @@ def run(max_comments: int = MAX_COMMENTS) -> None:
 
         page = context.new_page()
 
-        # Load FYP with wait + refresh
-        print("[fyp] Loading FYP...", flush=True)
-        page.goto("https://www.tiktok.com/", wait_until="domcontentloaded", timeout=30000)
-        time.sleep(20)
-        page.reload(wait_until="domcontentloaded", timeout=30000)
-        time.sleep(20)
+        # ── Load FYP ─────────────────────────────────────────────────
+        print("[fyp] Loading For You page...", flush=True)
+        page.goto("https://www.tiktok.com/foryou", wait_until="domcontentloaded", timeout=30000)
+        time.sleep(8)
         page.keyboard.press("Escape")
         time.sleep(1)
 
         if "login" in page.url.lower():
-            print("[fyp] Cookies expired.", flush=True)
+            print("[fyp] Cookies expired — re-export from Chrome.", flush=True)
             browser.close()
             return
 
+        # ── Scroll to populate DOM with FYP videos ───────────────────
+        print("[fyp] Scrolling FYP to load videos...", flush=True)
+        for _ in range(6):
+            page.mouse.wheel(0, 1200)
+            time.sleep(1.5)
+
+        # ── Scrape all video URLs now in the DOM ─────────────────────
+        videos = page.evaluate("""
+            () => {
+                const seen = new Set();
+                const items = [];
+                document.querySelectorAll('a[href*="/video/"]').forEach(a => {
+                    const url = a.href.split('?')[0];
+                    if (!url || seen.has(url)) return;
+                    seen.add(url);
+                    let desc = '';
+                    let el = a;
+                    for (let i = 0; i < 8; i++) {
+                        el = el.parentElement;
+                        if (!el) break;
+                        const d = el.querySelector('[data-e2e="video-desc"], p');
+                        if (d) { desc = d.innerText.trim(); break; }
+                    }
+                    items.push({ url, description: desc.slice(0, 300) });
+                });
+                return items;
+            }
+        """)
+
+        fresh = [v for v in (videos or []) if v["url"] not in commented]
+        random.shuffle(fresh)
+        print(f"[fyp] {len(fresh)} fresh FYP videos ready.", flush=True)
+
+        if not fresh:
+            print("[fyp] No new FYP videos — cookies may have expired.", flush=True)
+            browser.close()
+            return
+
+        # ── Navigate to each video and comment ───────────────────────
         count = 0
-        videos_since_last_comment = 0
-        # Irregular gaps: sometimes 2, sometimes 7 — feels human, not patterned
-        next_comment_after = random.choice([1, 2, 3, 4, 5, 6, 7, 8])
+        for video in fresh:
+            if count >= max_comments:
+                break
 
-        while count < max_comments:
-            # Get current video info
-            desc = page.evaluate("""
-                () => document.querySelectorAll('[data-e2e="video-desc"]')[0]?.innerText?.trim() || ''
-            """)
-            video_id = page.evaluate("""
-                () => document.querySelectorAll('a[href*="/video/"]')[0]?.href?.split('?')[0] || ''
-            """)
-            unique_key = video_id or desc[:80]
+            comment = _generate_comment(video["description"])
+            if not comment:
+                continue
 
-            # Watch the video — vary widely (quick scroll vs. actually watching)
-            watch_time = random.uniform(3, 22)
-            time.sleep(watch_time)
+            success = _post_comment(page, video["url"], comment)
+            if success:
+                count += 1
+                commented.add(video["url"])
+                _save_log(commented)
+                print(f"[fyp] ({count}/{max_comments}) {video['url']}", flush=True)
+                print(f'  └─ "{comment}"', flush=True)
 
-            # Decide whether to comment on this video
-            should_comment = videos_since_last_comment >= next_comment_after
-
-            if should_comment and unique_key not in commented:
-                if unique_key:
-                    commented.add(unique_key)
-
-                comment = _generate_comment(desc)
-                if comment:
-                    success = _comment(page, comment)
-                    if success:
-                        count += 1
-                        _save_log(commented)
-                        print(f"[fyp] ({count}/{max_comments}) └─ \"{comment}\"", flush=True)
-
-                        # Doom scroll 2-5 videos after commenting, linger on each
-                        post_scrolls = random.choice([2, 2, 3, 3, 4, 5])
-                        print(f"[fyp] Scrolling {post_scrolls} videos after comment...", flush=True)
-                        for _ in range(post_scrolls):
-                            time.sleep(random.uniform(4, 20))
-                            _scroll_to_next(page)
-                            videos_since_last_comment += 1
-
-                        # Brief pause before resuming
-                        time.sleep(random.uniform(2, 6))
-
-                        # Pick a new unpredictable gap before next comment
-                        videos_since_last_comment = 0
-                        next_comment_after = random.choice([2, 3, 3, 4, 4, 5, 6, 7])
-            elif unique_key in commented:
-                pass  # already seen, just scroll past
-
-            _scroll_to_next(page)
-            videos_since_last_comment += 1
+                if count < max_comments:
+                    delay = random.randint(45, 90)
+                    print(f"[fyp] Waiting {delay}s...", flush=True)
+                    time.sleep(delay)
 
         browser.close()
     print(f"[fyp] Done — {count} comments posted.", flush=True)
 
 
-def _like(page) -> None:
-    """Like the current video after UI has fully settled."""
+def _post_comment(page, video_url: str, comment: str) -> bool:
     try:
-        # Move mouse away from comment area first
-        page.mouse.move(200, 450)
-        time.sleep(3)  # wait for all animations/panels to fully settle
+        page.goto(video_url, wait_until="domcontentloaded", timeout=30000)
+        time.sleep(8)
+        page.keyboard.press("Escape")
+        time.sleep(1)
 
-        page.locator('[data-e2e="like-icon"]').first.click(timeout=5000)
-        time.sleep(1.5)
-        print("[fyp] Liked.", flush=True)
-    except Exception as e:
-        print(f"[fyp] Like error: {e}", flush=True)
+        # Like the video
+        try:
+            already_liked = page.evaluate("""
+                () => {
+                    const btn = document.querySelector('[data-e2e="like-icon"]');
+                    if (!btn) return false;
+                    const pressed = btn.closest('[aria-pressed]');
+                    return pressed ? pressed.getAttribute('aria-pressed') === 'true' : false;
+                }
+            """)
+            if not already_liked:
+                page.locator('[data-e2e="like-icon"]').first.click(timeout=5000)
+                time.sleep(random.uniform(1, 2))
+                print("[fyp] Liked.", flush=True)
+        except Exception:
+            pass
 
-
-def _comment(page, text: str) -> bool:
-    """Click comment icon, type comment, submit."""
-    try:
-        # Open comment sidebar
+        # Open comment panel
         page.locator('[data-e2e="comment-icon"]').first.click(timeout=5000)
+        time.sleep(random.uniform(2, 3))
 
-        # Poll up to 8s for the input to appear
-        found = False
+        # Find and focus comment input
+        input_found = False
         for _ in range(16):
             time.sleep(0.5)
-            try:
-                page.locator('[data-e2e="comment-input"]').first.click(timeout=500)
-            except Exception:
-                pass
-            found = page.evaluate("""
+            input_found = page.evaluate("""
                 () => {
-                    const box = document.querySelector('[data-e2e="comment-input"] [contenteditable]')
-                             || document.querySelector('[contenteditable="plaintext-only"]')
-                             || document.querySelector('[contenteditable="true"]');
-                    if (box) { const r = box.getBoundingClientRect(); if (r.width > 50) { box.click(); box.focus(); return true; } }
+                    const candidates = [
+                        ...document.querySelectorAll('[data-e2e="comment-input"] [contenteditable]'),
+                        ...document.querySelectorAll('[contenteditable="plaintext-only"]'),
+                        ...document.querySelectorAll('[contenteditable="true"]'),
+                    ];
+                    for (const el of candidates) {
+                        const r = el.getBoundingClientRect();
+                        if (r.width > 50 && r.height > 5) {
+                            el.click();
+                            el.focus();
+                            return true;
+                        }
+                    }
                     return false;
                 }
             """)
-            if found:
+            if input_found:
                 break
 
-        if not found:
-            print("[fyp] Comment input not found.", flush=True)
-            page.keyboard.press("Escape")
+        if not input_found:
+            print(f"[fyp] Comment input not found.", flush=True)
             return False
 
         time.sleep(random.uniform(0.5, 1))
 
-        # Type with human-like speed
-        for char in text:
+        for char in comment:
             page.keyboard.type(char)
             time.sleep(random.uniform(0.04, 0.12))
 
         time.sleep(random.uniform(0.8, 1.2))
         page.keyboard.press("Enter")
-        time.sleep(2.5)
-
-        # Close sidebar
-        page.keyboard.press("Escape")
-        time.sleep(1)
+        time.sleep(3)
         return True
 
     except Exception as e:
-        print(f"[fyp] Comment error: {e}", flush=True)
-        page.keyboard.press("Escape")
+        print(f"[fyp] Error on {video_url}: {e}", flush=True)
         return False
-
-
-def _scroll_to_next(page) -> None:
-    """Advance to the next video, trying multiple methods until one works."""
-    before_id = page.evaluate(
-        "() => document.querySelectorAll('a[href*=\"/video/\"]')[0]?.href?.split('?')[0] || ''"
-    )
-    before_desc = page.evaluate(
-        "() => document.querySelectorAll('[data-e2e=\"video-desc\"]')[0]?.innerText?.trim()?.slice(0,40) || ''"
-    )
-
-    def _changed() -> bool:
-        after_id = page.evaluate(
-            "() => document.querySelectorAll('a[href*=\"/video/\"]')[0]?.href?.split('?')[0] || ''"
-        )
-        after_desc = page.evaluate(
-            "() => document.querySelectorAll('[data-e2e=\"video-desc\"]')[0]?.innerText?.trim()?.slice(0,40) || ''"
-        )
-        return (after_id and after_id != before_id) or (after_desc and after_desc != before_desc)
-
-    for attempt in range(4):
-        if attempt == 0:
-            # Method 1: click TikTok's own down-arrow nav button
-            try:
-                btn = page.locator('[data-e2e="arrow-down"], [class*="ButtonBasic"][aria-label*="next" i], [class*="arrow-down"]').first
-                btn.click(timeout=2000)
-            except Exception:
-                page.mouse.wheel(0, 900)
-        elif attempt == 1:
-            # Method 2: mouse wheel on the feed container
-            page.mouse.wheel(0, 900)
-        elif attempt == 2:
-            # Method 3: ArrowDown with explicit focus on body
-            page.evaluate("document.body.focus()")
-            page.keyboard.press("ArrowDown")
-        else:
-            # Method 4: JS scroll the feed container directly
-            page.evaluate("""
-                () => {
-                    const feed = document.querySelector('[class*="DivVideoFeedV2"], [data-e2e="recommend-list-item-container"], main');
-                    if (feed) feed.scrollBy(0, window.innerHeight);
-                    else window.scrollBy(0, window.innerHeight);
-                }
-            """)
-
-        time.sleep(random.uniform(2.5, 3.5))
-        if _changed():
-            return
-
-        if attempt < 3:
-            print(f"[fyp] Scroll method {attempt+1} didn't advance, trying next...", flush=True)
 
 
 def _generate_comment(description: str) -> str | None:
