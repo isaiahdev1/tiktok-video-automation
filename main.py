@@ -225,10 +225,6 @@ if __name__ == "__main__":
     parser.add_argument("--interval", type=int, default=5, help="Minutes between batch videos (default: 5)")
     parser.add_argument("--retry-youtube", action="store_true", help="Retry all queued YouTube uploads and exit")
     parser.add_argument("--stats", action="store_true", help="Print channel analytics and exit")
-    parser.add_argument("--comment", type=int, metavar="N", help="Comment on N TikTok videos via hashtag pages")
-    parser.add_argument("--comment-fyp", type=int, metavar="N", dest="comment_fyp", help="Comment on N TikTok videos directly from FYP feed")
-    parser.add_argument("--comment-youtube", type=int, metavar="N", dest="comment_youtube", help="Comment on N YouTube Shorts videos")
-    parser.add_argument("--comment-both", type=int, metavar="N", dest="comment_both", help="Comment on N videos on BOTH TikTok FYP and YouTube Shorts in parallel")
     args = parser.parse_args()
 
     if args.retry_youtube:
@@ -239,32 +235,6 @@ if __name__ == "__main__":
     if args.stats:
         from src.analytics import print_stats
         print_stats()
-        sys.exit(0)
-
-    if args.comment:
-        from src.tiktok_commenter import run as comment_run
-        comment_run(max_comments=args.comment)
-        sys.exit(0)
-
-    if args.comment_fyp:
-        from src.tiktok_fyp_commenter import run as fyp_run
-        fyp_run(max_comments=args.comment_fyp)
-        sys.exit(0)
-
-    if args.comment_youtube:
-        from src.youtube_shorts_commenter import run as yt_run
-        yt_run(max_comments=args.comment_youtube)
-        sys.exit(0)
-
-    if args.comment_both:
-        import subprocess
-        n = args.comment_both
-        python = sys.executable
-        script = os.path.abspath(__file__)
-        p_tiktok = subprocess.Popen([python, "-u", script, "--comment-fyp", str(n)])
-        p_youtube = subprocess.Popen([python, "-u", script, "--comment-youtube", str(n)])
-        p_tiktok.wait()
-        p_youtube.wait()
         sys.exit(0)
 
     for i in range(args.batch):
