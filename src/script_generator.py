@@ -28,20 +28,26 @@ STRUCTURE (135-155 words):
 - Build (4-5 reveals, 85-100 words): Each one tops the last. Specifics. Names. Numbers. Short punchy sentences that hit like body blows.
 - Payoff + CTA (2-3 sentences, 25-35 words): The twist that reframes the whole video. Then a CTA that feels earned.
 
-For the stock_queries: think like a video editor sourcing B-roll. What footage would a documentary director cut to during each sentence? Be specific and concrete — these need to actually exist as stock footage (e.g. "woman forgetting name awkward pause conversation", "ancient roman aqueduct stone ruins", "scientist pipette laboratory research"). Avoid abstract concepts. Real scenes only.
+For narration_segments: break the narration into 8-10 individual sentences. For each sentence, write an image_prompt that shows EXACTLY what that sentence is describing — not mood, not theme, the literal subject.
+
+Image prompt rules:
+- STOP-SCROLL quality: every image must look like it belongs on a magazine cover or viral Instagram post
+- Ultra-specific to the sentence: if it says "Warren Buffett lost $23 billion in one day", write "Warren Buffett in suit looking devastated, holding head in hands, stock market crash on screens behind him, dramatic red light, cinematic close-up"
+- Subject + action + setting + lighting + angle — always all five elements
+- Lighting is everything: golden hour, dramatic rim light, neon glow, god rays, harsh shadows — pick the most striking option
+- Mix angles aggressively: extreme close-up face, wide establishing shot, bird's eye aerial, low angle hero shot, over-the-shoulder — never two consecutive clips at the same angle
+- Photorealistic people and places — real faces, real environments, real objects. No CGI, no abstract, no text
+- Color contrast: pair warm subjects against cool backgrounds or vice versa for maximum visual pop
 
 Respond ONLY with valid JSON, no markdown:
 {{
   "title": "<curiosity-gap title, 50 chars max, must make someone stop scrolling>",
   "narration": "<the script, 135-155 words, every sentence a gut punch>",
   "hook": "<5-8 words, the single most impossible-sounding thing in the video>",
-  "stock_queries": [
-    "<scene 1 — hook moment: specific concrete searchable footage description>",
-    "<scene 2 — first reveal: specific real-world scene>",
-    "<scene 3 — second reveal: specific real-world scene>",
-    "<scene 4 — third reveal: specific real-world scene>",
-    "<scene 5 — tension peak: specific real-world scene>",
-    "<scene 6 — payoff/twist: specific real-world scene>"
+  "narration_segments": [
+    {{"text": "<exact sentence from narration>", "search_query": "<3-4 plain keywords for stock photo search, e.g. 'man stressed paycheck desk'>", "image_prompt": "<detailed AI image description if stock photo fails, cinematic, photorealistic>"}},
+    {{"text": "<next sentence>", "search_query": "<...>", "image_prompt": "<...>"}},
+    "<8-10 total items covering the entire narration>"
   ],
   "mood": "<upbeat | calm | dramatic | neutral>",
   "description": "<2-3 sentence YouTube description with relevant hashtags and #Shorts>",
@@ -71,8 +77,14 @@ Respond ONLY with valid JSON, no markdown:
             raw = raw[4:]
     script = json.loads(raw.strip())
 
-    # Backwards compat: expose stock_queries as keywords + image_prompts
-    script.setdefault("keywords", script.get("stock_queries", [])[:5])
-    script.setdefault("image_prompts", script.get("stock_queries", []))
+    # Derive image_prompts and stock_queries from narration_segments for backward compat
+    segments = script.get("narration_segments", [])
+    if segments and isinstance(segments[0], dict):
+        derived_prompts = [s["image_prompt"] for s in segments if isinstance(s, dict)]
+    else:
+        derived_prompts = script.get("stock_queries", [])
+    script["image_prompts"] = derived_prompts
+    script.setdefault("stock_queries", derived_prompts)
+    script.setdefault("keywords", derived_prompts[:5])
 
     return script

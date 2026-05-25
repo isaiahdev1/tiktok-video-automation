@@ -91,7 +91,15 @@ def run_pipeline(
 
     elif style == "ai_images" and image_prompts:
         from src.image_generator import generate_images
-        clip_paths = generate_images(image_prompts, os.path.join(OUTPUT_DIR, "images", run_id))
+        search_queries = [
+            s.get("search_query", "") for s in script.get("narration_segments", [])
+            if isinstance(s, dict)
+        ]
+        clip_paths = generate_images(
+            image_prompts,
+            os.path.join(OUTPUT_DIR, "images", run_id),
+            search_queries=search_queries or None,
+        )
 
     # Fallback: kinetic always works
     if not clip_paths:
@@ -113,12 +121,14 @@ def run_pipeline(
     )[:50]
     output_path = os.path.join(OUTPUT_DIR, "final", f"{safe_title}.mp4")
 
+    segments = [s["text"] for s in script.get("narration_segments", []) if isinstance(s, dict)]
     build_video(
         clip_paths=clip_paths,
         audio_path=audio_path,
         output_path=output_path,
         hook_text=hook,
         mood=mood,
+        segments=segments if len(segments) == len(clip_paths) else None,
     )
 
     # Cleanup audio file
@@ -189,11 +199,7 @@ def run_pipeline(
 
 
 def _pick_style() -> str:
-    if os.environ.get("KLING_ACCESS_KEY"):
-        return random.choice(["kling", "kling", "stock"])
-    if os.environ.get("PEXELS_API_KEY"):
-        return "stock"
-    return "kinetic"
+    return "ai_images"
 
 
 def _log_upload(title: str, youtube_url: str, tiktok_ok: bool) -> None:

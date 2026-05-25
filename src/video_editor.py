@@ -46,21 +46,33 @@ _ZOOM_EXPRS = [
 ]
 
 
+def _segment_durations(segments: list[str], total_duration: float) -> list[float]:
+    """Divide total duration proportionally by word count per segment.
+    Adds back crossfade overlap time so clips cover the full audio."""
+    n_crossfades = max(len(segments) - 1, 0)
+    effective = total_duration + n_crossfades * CROSSFADE_DUR
+    counts = [max(len(s.split()), 1) for s in segments]
+    total = sum(counts)
+    return [effective * (c / total) for c in counts]
+
+
 def build_video(
     clip_paths: list[str],
     audio_path: str,
     output_path: str,
     hook_text: str | None = None,
     mood: str = "neutral",
+    segments: list[str] | None = None,
 ) -> str:
     """
     Build the final Short:
       1. Scale/crop clips or images to 1080x1920 (Ken Burns zoom)
       2. Crossfade-concat all clips
       3. Mux with voiceover + mood-matched background music
-      4. Burn karaoke captions, channel name flash, hook overlay, outro
+      4. Burn karaoke captions
       5. Apply cinematic color grade per mood
 
+    If segments provided, each clip duration matches its sentence length.
     Returns output_path.
     """
     if not clip_paths:
@@ -73,20 +85,27 @@ def build_video(
     print(f"[editor] Audio: {audio_duration:.2f}s")
 
     n = len(clip_paths)
-    per_clip = audio_duration / n
-    print(f"[editor] {n} clips × {per_clip:.2f}s")
+
+    # Per-clip durations — sentence-timed if segments provided, else equal
+    if segments and len(segments) == n:
+        clip_durations = _segment_durations(segments, audio_duration)
+        print(f"[editor] {n} clips, sentence-timed")
+    else:
+        per_clip = audio_duration / n
+        clip_durations = [per_clip] * n
+        print(f"[editor] {n} clips × {per_clip:.2f}s")
 
     # ── Step 1: Process each clip/image ───────────────────────────
     processed = []
     for i, clip in enumerate(clip_paths):
         dest = os.path.join(work_dir, f"_proc_{i}.mp4")
-        _process_clip(clip, dest, per_clip, clip_index=i)
+        _process_clip(clip, dest, clip_durations[i], clip_index=i)
         processed.append(dest)
 
     # ── Step 2: Crossfade concat ──────────────────────────────────
     concat_path = os.path.join(work_dir, "_concat.mp4")
     if len(processed) > 1:
-        _concat_crossfade(processed, concat_path, per_clip, audio_duration)
+        _concat_crossfade(processed, concat_path, clip_durations, audio_duration)
     else:
         _run([FFMPEG, "-y", "-i", processed[0], "-c", "copy", concat_path])
 
@@ -215,7 +234,7 @@ def _build_final(
         FFMPEG, "-y",
         "-i", muxed_path,
         "-vf", vf,
-        "-c:v", "libx264", "-preset", "fast", "-crf", "22",
+        "-c:v", "libx264", "-preset", "slow", "-crf", "16",
         "-c:a", "copy",
         "-movflags", "+faststart",
         output_path,
@@ -226,7 +245,7 @@ def _build_final(
 def _concat_crossfade(
     clips: list[str],
     output: str,
-    clip_duration: float,
+    clip_durations: list[float],
     total_duration: float,
 ) -> None:
     """Concat clips with a smooth crossfade between each one."""
@@ -238,8 +257,10 @@ def _concat_crossfade(
     filter_parts = []
     current = "[0:v]"
 
+    elapsed = 0.0
     for i in range(1, len(clips)):
-        offset = i * (clip_duration - f)
+        elapsed += clip_durations[i - 1]
+        offset = elapsed - i * f  # each prior xfade reduces stream length by f
         out_label = f"[v{i}]" if i < len(clips) - 1 else "[vout]"
         filter_parts.append(
             f"{current}[{i}:v]xfade=transition=fade:duration={f}:offset={offset:.3f}{out_label}"
@@ -254,7 +275,7 @@ def _concat_crossfade(
         "-filter_complex", filter_complex,
         "-map", "[vout]",
         "-t", str(total_duration),
-        "-c:v", "libx264", "-preset", "fast", "-crf", "22",
+        "-c:v", "libx264", "-preset", "slow", "-crf", "16",
         output,
     ])
 
@@ -265,10 +286,11 @@ def _process_clip(src: str, dest: str, duration: float, clip_index: int = 0) -> 
     zoom_expr = _ZOOM_EXPRS[clip_index % len(_ZOOM_EXPRS)]
 
     vf = (
-        f"scale={TARGET_W * 2}:{TARGET_H * 2}:force_original_aspect_ratio=increase,"
-        f"crop={TARGET_W}:{TARGET_H},"
+        f"scale={TARGET_W * 2}:{TARGET_H * 2}:force_original_aspect_ratio=increase:flags=lanczos,"
+        f"crop={TARGET_W * 2}:{TARGET_H * 2},"
         f"zoompan={zoom_expr}"
-        f":d={int(duration * 30)}:s={TARGET_W}x{TARGET_H}:fps=30,"
+        f":d={int(duration * 30)}:s={TARGET_W * 2}x{TARGET_H * 2}:fps=30,"
+        f"scale={TARGET_W}:{TARGET_H}:flags=lanczos,"
         "fps=30"
     )
 
@@ -278,7 +300,7 @@ def _process_clip(src: str, dest: str, duration: float, clip_index: int = 0) -> 
             "-loop", "1", "-i", src,
             "-t", str(duration),
             "-vf", vf, "-an",
-            "-c:v", "libx264", "-preset", "fast", "-crf", "22",
+            "-c:v", "libx264", "-preset", "slow", "-crf", "16",
             dest,
         ])
     else:
@@ -287,7 +309,7 @@ def _process_clip(src: str, dest: str, duration: float, clip_index: int = 0) -> 
             "-ss", "0", "-i", src,
             "-t", str(duration),
             "-vf", vf, "-an",
-            "-c:v", "libx264", "-preset", "fast", "-crf", "22",
+            "-c:v", "libx264", "-preset", "slow", "-crf", "16",
             dest,
         ])
 

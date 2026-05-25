@@ -32,22 +32,19 @@ def transcribe_words(audio_path: str) -> list[dict]:
 def generate_ass(
     words: list[dict],
     hook_text: str = "",
-    words_per_line: int = 3,
+    words_per_line: int = 1,
     channel_name: str = "",
     total_duration: float = 0.0,
 ) -> str:
     """
-    Burn karaoke captions:
-    - 3 words shown at a time, centered in lower frame
-    - Current word highlighted in yellow
+    Burn minimal captions:
+    - 1 word at a time, centered in lower frame
+    - All white — no yellow highlight
     - Thick black outline, drop shadow — readable over any footage
-    - Clean: no hook overlay, no channel flash, no impact interruptions
     """
     # ASS color format: &HAABBGGRR&
-    # White = &H00FFFFFF&   Yellow = &H0000FFFF&
-    YELLOW = "&H0000FFFF&"
-    WHITE  = "&H00FFFFFF&"
-    BLACK  = "&H00000000&"
+    WHITE = "&H00FFFFFF&"
+    BLACK = "&H00000000&"
 
     header = (
         "[Script Info]\n"
@@ -63,8 +60,8 @@ def generate_ass(
         "Alignment, MarginL, MarginR, MarginV, Encoding\n"
 
         # Main captions — white, bold, thick outline, lower-center
-        f"Style: Cap,Arial Black,98,{WHITE},{WHITE},{BLACK},"
-        "&H88000000,-1,0,0,0,100,100,1,0,1,7,3,2,50,50,480,1\n\n"
+        f"Style: Cap,Arial Black,110,{WHITE},{WHITE},{BLACK},"
+        "&H88000000,-1,0,0,0,100,100,2,0,1,8,3,2,50,50,480,1\n\n"
 
         "[Events]\n"
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
@@ -72,10 +69,9 @@ def generate_ass(
 
     events = []
 
-    # Karaoke captions: 3 words per group, current word in yellow
+    # One word at a time, all white
     for i in range(0, len(words), words_per_line):
         chunk = words[i: i + words_per_line]
-        chunk_upper = [w["word"].upper() for w in chunk]
 
         for j, word_data in enumerate(chunk):
             start = word_data["start"]
@@ -86,14 +82,7 @@ def generate_ass(
             if j == len(chunk) - 1 and i + words_per_line < len(words):
                 end = max(end, words[i + words_per_line]["start"])
 
-            parts = []
-            for k, w in enumerate(chunk_upper):
-                if k == j:
-                    parts.append(f"{{\\c{YELLOW}}}{w}{{\\c{WHITE}}}")
-                else:
-                    parts.append(w)
-
-            text = "  ".join(parts)
+            text = "  ".join(w["word"].upper() for w in chunk)
             events.append(
                 f"Dialogue: 0,{_fmt(start)},{_fmt(end)},Cap,,0,0,0,,{text}"
             )
