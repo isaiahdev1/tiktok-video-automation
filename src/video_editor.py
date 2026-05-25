@@ -34,6 +34,7 @@ _MOOD_GRADE = {
 }
 
 CROSSFADE_DUR = 0.3  # seconds
+ENDCARD_DUR = 2.5   # seconds
 
 # Six distinct camera movements — cycles through each clip
 _ZOOM_EXPRS = [
@@ -44,6 +45,64 @@ _ZOOM_EXPRS = [
     "z='min(zoom+0.0008,1.1)':x='iw/2-(iw/zoom/2)':y='max(ih*0.3-(ih/zoom/2),0)'",             # zoom in, top focus
     "z='min(zoom+0.0004,1.05)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'",                     # slow drift
 ]
+
+
+def _generate_endcard_image(work_dir: str) -> str | None:
+    """Return path to end card image. Prefers assets/endcard.png, else generates branded card."""
+    assets_dir = os.path.join(os.path.dirname(__file__), "..", "assets")
+    for name in ("endcard.png", "endcard.jpg", "logo.png", "logo.jpg"):
+        p = os.path.join(assets_dir, name)
+        if os.path.exists(p):
+            print(f"[editor] End card: using {name}")
+            return p
+
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+
+        img = Image.new("RGB", (TARGET_W, TARGET_H), (5, 5, 5))
+        draw = ImageDraw.Draw(img)
+        cx, cy = TARGET_W // 2, TARGET_H // 2
+        gold = (212, 175, 55)
+        grey = (170, 170, 170)
+
+        # Load fonts — try a few macOS paths
+        def _font(size: int, bold: bool = False) -> ImageFont.ImageFont:
+            candidates = [
+                f"/System/Library/Fonts/Supplemental/{'Arial Black' if bold else 'Arial'}.ttf",
+                f"/System/Library/Fonts/{'Arial Black' if bold else 'Arial'}.ttf",
+                "/Library/Fonts/Arial Black.ttf",
+                "/Library/Fonts/Arial.ttf",
+            ]
+            for c in candidates:
+                if os.path.exists(c):
+                    return ImageFont.truetype(c, size)
+            return ImageFont.load_default()
+
+        font_title = _font(100, bold=True)
+        font_sub   = _font(46)
+
+        # Gold rules
+        draw.rectangle([120, cy - 130, TARGET_W - 120, cy - 127], fill=gold)
+        draw.rectangle([120, cy + 120, TARGET_W - 120, cy + 123], fill=gold)
+
+        # Channel name
+        bbox = draw.textbbox((0, 0), CHANNEL_NAME, font=font_title)
+        tw = bbox[2] - bbox[0]
+        draw.text((cx - tw // 2, cy - 110), CHANNEL_NAME, font=font_title, fill=gold)
+
+        # CTA
+        cta = "Follow for more"
+        bbox2 = draw.textbbox((0, 0), cta, font=font_sub)
+        cw = bbox2[2] - bbox2[0]
+        draw.text((cx - cw // 2, cy + 50), cta, font=font_sub, fill=grey)
+
+        out = os.path.join(work_dir, "_endcard.png")
+        img.save(out)
+        print("[editor] End card: generated branded image")
+        return out
+    except Exception as e:
+        print(f"[editor] End card generation failed (non-fatal): {e}")
+        return None
 
 
 def _segment_durations(segments: list[str], total_duration: float) -> list[float]:
@@ -109,6 +168,17 @@ def build_video(
     else:
         _run([FFMPEG, "-y", "-i", processed[0], "-c", "copy", concat_path])
 
+    # ── Step 2.5: Append end card ─────────────────────────────────
+    endcard_img = _generate_endcard_image(work_dir)
+    endcard_dur = 0.0
+    if endcard_img:
+        endcard_clip = os.path.join(work_dir, "_endcard_clip.mp4")
+        _process_clip(endcard_img, endcard_clip, ENDCARD_DUR, clip_index=5)  # slow drift
+        with_endcard = os.path.join(work_dir, "_concat_ec.mp4")
+        _append_endcard(concat_path, endcard_clip, with_endcard, audio_duration)
+        concat_path = with_endcard
+        endcard_dur = ENDCARD_DUR
+
     # ── Step 3: Transcribe + generate captions ───────────────────
     ass_path = None
     try:
@@ -142,6 +212,7 @@ def build_video(
         sfx_path=sfx_path,
         audio_duration=audio_duration,
         mood=mood,
+        endcard_dur=endcard_dur,
     )
 
     shutil.rmtree(work_dir, ignore_errors=True)
@@ -161,13 +232,15 @@ def _build_final(
     sfx_path: str | None,
     audio_duration: float,
     mood: str = "neutral",
+    endcard_dur: float = 0.0,
 ) -> None:
     work_dir = os.path.dirname(output_path)
     muxed_path = os.path.join(work_dir, f"_muxed_{os.getpid()}.mp4")
     music_vol = _MOOD_VOL.get(mood, "-22dB")
+    total_dur = audio_duration + endcard_dur
 
     # ── Pass 1: audio mux ─────────────────────────────────────────
-    # Build input list: video, voiceover, [music], [sfx]
+    # Build input list: video, voiceover, [music], [whoosh sfx], [chime sfx]
     inputs = ["-i", video_path, "-i", audio_path]
     streams = ["[1:a]apad[vo]"]
     mix_inputs = ["[vo]"]
@@ -177,23 +250,36 @@ def _build_final(
         inputs += ["-i", music_path]
         streams.append(
             f"[{stream_idx}:a]aloop=loop=-1:size=2147483647,"
-            f"atrim=duration={audio_duration},volume={music_vol}[m]"
+            f"atrim=duration={total_dur},volume={music_vol}[m]"
         )
         mix_inputs.append("[m]")
         stream_idx += 1
 
     if sfx_path:
         inputs += ["-i", sfx_path]
-        # SFX plays at t=0, -12dB
+        # Whoosh SFX plays at t=0
         streams.append(
             f"[{stream_idx}:a]atrim=duration=2.0,volume=-12dB,apad[sfx]"
         )
         mix_inputs.append("[sfx]")
         stream_idx += 1
 
+    # Chime SFX plays at the end card transition
+    if endcard_dur > 0:
+        chime_path = _pick_sfx("chime") or _pick_sfx("bell") or _pick_sfx("ding")
+        if chime_path:
+            delay_ms = int(audio_duration * 1000)
+            inputs += ["-i", chime_path]
+            streams.append(
+                f"[{stream_idx}:a]atrim=duration=3.0,volume=-10dB,"
+                f"adelay={delay_ms}|{delay_ms},apad[chime]"
+            )
+            mix_inputs.append("[chime]")
+            stream_idx += 1
+
     if len(mix_inputs) > 1:
         streams.append(
-            f"{''.join(mix_inputs)}amix=inputs={len(mix_inputs)}:duration=first[aout]"
+            f"{''.join(mix_inputs)}amix=inputs={len(mix_inputs)}:duration=longest[aout]"
         )
         af = ";".join(streams)
         _run([
@@ -204,7 +290,7 @@ def _build_final(
             "-map", "[aout]",
             "-c:v", "copy",
             "-c:a", "aac", "-b:a", "192k",
-            "-t", str(audio_duration + 0.5),
+            "-t", str(total_dur + 0.3),
             "-movflags", "+faststart",
             muxed_path,
         ])
@@ -216,7 +302,7 @@ def _build_final(
             "-map", "0:v", "-map", "1:a",
             "-c:v", "copy",
             "-c:a", "aac", "-b:a", "192k",
-            "-t", str(audio_duration + 0.5),
+            "-t", str(total_dur + 0.3),
             "-movflags", "+faststart",
             muxed_path,
         ])
@@ -240,6 +326,21 @@ def _build_final(
         output_path,
     ])
     os.unlink(muxed_path)
+
+
+def _append_endcard(main: str, endcard: str, output: str, main_dur: float) -> None:
+    """Append end card to main video with a crossfade."""
+    f = CROSSFADE_DUR
+    offset = main_dur - f
+    _run([
+        FFMPEG, "-y",
+        "-i", main, "-i", endcard,
+        "-filter_complex",
+        f"[0:v][1:v]xfade=transition=fade:duration={f}:offset={offset:.3f}[vout]",
+        "-map", "[vout]",
+        "-c:v", "libx264", "-preset", "slow", "-crf", "16",
+        output,
+    ])
 
 
 def _concat_crossfade(
