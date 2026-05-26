@@ -48,13 +48,27 @@ _ZOOM_EXPRS = [
 
 
 def _generate_endcard_image(work_dir: str) -> str | None:
-    """Return path to end card image. Prefers assets/endcard.png, else generates branded card."""
+    """Return path to end card image.
+    - assets/endcard.png → used as-is (must be 9:16)
+    - assets/logo.png    → composited centered on black 1080×1920 card
+    - fallback           → text-based branded card
+    """
     assets_dir = os.path.join(os.path.dirname(__file__), "..", "assets")
-    for name in ("endcard.png", "endcard.jpg", "logo.png", "logo.jpg"):
+
+    # Pre-made full-frame end card
+    for name in ("endcard.png", "endcard.jpg"):
         p = os.path.join(assets_dir, name)
         if os.path.exists(p):
             print(f"[editor] End card: using {name}")
             return p
+
+    # Logo file — composite onto black card
+    logo_path = None
+    for name in ("logo.png", "logo.jpg"):
+        p = os.path.join(assets_dir, name)
+        if os.path.exists(p):
+            logo_path = p
+            break
 
     try:
         from PIL import Image, ImageDraw, ImageFont
@@ -62,10 +76,7 @@ def _generate_endcard_image(work_dir: str) -> str | None:
         img = Image.new("RGB", (TARGET_W, TARGET_H), (5, 5, 5))
         draw = ImageDraw.Draw(img)
         cx, cy = TARGET_W // 2, TARGET_H // 2
-        gold = (212, 175, 55)
-        grey = (170, 170, 170)
 
-        # Load fonts — try a few macOS paths
         def _font(size: int, bold: bool = False) -> ImageFont.ImageFont:
             candidates = [
                 f"/System/Library/Fonts/Supplemental/{'Arial Black' if bold else 'Arial'}.ttf",
@@ -78,27 +89,40 @@ def _generate_endcard_image(work_dir: str) -> str | None:
                     return ImageFont.truetype(c, size)
             return ImageFont.load_default()
 
-        font_title = _font(100, bold=True)
-        font_sub   = _font(46)
+        if logo_path:
+            # Center logo on black card, ~700px wide
+            logo = Image.open(logo_path).convert("RGBA")
+            logo_size = 700
+            logo = logo.resize((logo_size, logo_size), Image.LANCZOS)
+            lx = (TARGET_W - logo_size) // 2
+            ly = cy - logo_size // 2 - 60
+            img.paste(logo, (lx, ly), logo)
 
-        # Gold rules
-        draw.rectangle([120, cy - 130, TARGET_W - 120, cy - 127], fill=gold)
-        draw.rectangle([120, cy + 120, TARGET_W - 120, cy + 123], fill=gold)
-
-        # Channel name
-        bbox = draw.textbbox((0, 0), CHANNEL_NAME, font=font_title)
-        tw = bbox[2] - bbox[0]
-        draw.text((cx - tw // 2, cy - 110), CHANNEL_NAME, font=font_title, fill=gold)
-
-        # CTA
-        cta = "Follow for more"
-        bbox2 = draw.textbbox((0, 0), cta, font=font_sub)
-        cw = bbox2[2] - bbox2[0]
-        draw.text((cx - cw // 2, cy + 50), cta, font=font_sub, fill=grey)
+            # "Follow for more" below logo
+            cta = "Follow for more"
+            font_sub = _font(48)
+            bbox = draw.textbbox((0, 0), cta, font=font_sub)
+            cw = bbox[2] - bbox[0]
+            draw.text((cx - cw // 2, ly + logo_size + 50), cta, font=font_sub, fill=(170, 170, 170))
+            print("[editor] End card: logo composited on black card")
+        else:
+            # Text-only fallback
+            gold, grey = (212, 175, 55), (170, 170, 170)
+            font_title = _font(100, bold=True)
+            font_sub   = _font(46)
+            draw.rectangle([120, cy - 130, TARGET_W - 120, cy - 127], fill=gold)
+            draw.rectangle([120, cy + 120, TARGET_W - 120, cy + 123], fill=gold)
+            bbox = draw.textbbox((0, 0), CHANNEL_NAME, font=font_title)
+            tw = bbox[2] - bbox[0]
+            draw.text((cx - tw // 2, cy - 110), CHANNEL_NAME, font=font_title, fill=gold)
+            cta = "Follow for more"
+            bbox2 = draw.textbbox((0, 0), cta, font=font_sub)
+            cw = bbox2[2] - bbox2[0]
+            draw.text((cx - cw // 2, cy + 50), cta, font=font_sub, fill=grey)
+            print("[editor] End card: generated text card")
 
         out = os.path.join(work_dir, "_endcard.png")
         img.save(out)
-        print("[editor] End card: generated branded image")
         return out
     except Exception as e:
         print(f"[editor] End card generation failed (non-fatal): {e}")
