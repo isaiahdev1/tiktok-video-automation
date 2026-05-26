@@ -55,10 +55,11 @@ jobs:
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
           ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
           ELEVENLABS_VOICE_ID: ${{ secrets.ELEVENLABS_VOICE_ID }}
+          FAL_KEY: ${{ secrets.FAL_KEY }}
           CHANNEL_NAME: ${{ secrets.CHANNEL_NAME }}
           NICHE: ${{ secrets.NICHE }}
           TIKTOK_HEADLESS: "1"
-        run: python main.py --batch 1
+        run: python main.py --batch 1 --youtube
 
       - name: Save topics queue back to repo
         if: always()
