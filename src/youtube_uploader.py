@@ -129,16 +129,7 @@ def upload_short(
     video_id = response["id"]
     print(f"[youtube] Done! https://www.youtube.com/shorts/{video_id}")
 
-    if thumbnail_path and os.path.exists(thumbnail_path):
-        try:
-            youtube.thumbnails().set(
-                videoId=video_id,
-                media_body=googleapiclient.http.MediaFileUpload(
-                    thumbnail_path, mimetype="image/jpeg"
-                ),
-            ).execute()
-            print("[youtube] Thumbnail set.")
-        except Exception as e:
-            print(f"[youtube] Thumbnail failed (non-fatal): {e}")
+    # Thumbnail upload requires a verified YouTube channel (1000+ subs or manual verification)
+    # Skipping until channel is verified to avoid 403 errors
 
     return video_id
