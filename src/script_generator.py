@@ -21,7 +21,7 @@ THE NON-NEGOTIABLES:
 4. Zero filler words. No "basically", "actually", "so", "well". Every word earns its place.
 5. Sentence length: short. Medium. Short. Short. Vary it. Create rhythm.
 6. The payoff must reframe everything they just heard — a twist that makes the hook mean something completely different.
-7. CTA: one sentence, feels natural, NOT "follow for more facts." Make it specific to the video's theme.
+7. CTA: must DEMAND a comment. End on a specific question the viewer feels compelled to answer, or a "type X if Y" / "be honest, did you just try it?" mechanic tied to the video's theme. Our videos get views but almost zero comments — the CTA's #1 job is to break that. NEVER "follow for more facts." Make the viewer reply.
 
 STRUCTURE (135-155 words):
 - Hook (1-2 sentences, 15-20 words): Impossible-sounding fact. Present tense. Active voice.

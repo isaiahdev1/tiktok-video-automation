@@ -9,17 +9,26 @@ TOPICS_FILE = os.path.join(os.path.dirname(__file__), "..", "topics_queue.json")
 
 _CLAUDE_PROMPT = """Generate 25 viral short-form video topics for TikTok/YouTube Shorts.
 
-Rules:
-- Curiosity-driven, surprising, or counterintuitive facts
-- Mix categories: science, psychology, history, money, life hacks, nature
-- Each topic works as a 45-second narrated video over stock footage
-- No political or controversial topics
-- Phrased as a hook question or bold statement (not a dry title)
+PROVEN WINNING FORMAT (this is what our audience rewards with 10x the views):
+Facts about the VIEWER'S OWN body, brain, senses, and behavior. Second-person "you".
+Our biggest hits were about the viewer's own pinky finger, eyes, phone-in-hand sensation,
+and food rules — things people can feel or test on themselves RIGHT NOW.
 
-Examples of good topics:
+Rules:
+- AT LEAST 16 of the 25 must be second-person "you/your" hooks about the body, brain, senses,
+  habits, or hidden self ("Your tongue is lying to you about...", "Why your brain deletes...").
+- The viewer must be able to feel, test, or notice it on themselves while watching.
+- The remaining ~9 can be surprising science/psychology/history/money/nature facts.
+- Curiosity-driven, surprising, or counterintuitive. Each works as a 45-second narrated video.
+- No political or controversial topics.
+- Phrased as a hook statement or question (not a dry title).
+
+Examples of our winning format:
+- "Your pinky finger controls 50% of your hand's strength"
+- "Why you can touch your own eye but it feels wrong"
+- "Your phone feels heavier when the battery is full (your brain is lying)"
+- "The 3-second rule is real, but not for the reason you think"
 - "Why you can't tickle yourself (and what it reveals about your brain)"
-- "The Japanese technique that adds 5 years to your life"
-- "Why billionaires wake up at 4am and why you shouldn't"
 
 Return ONLY a JSON array of 25 strings. No markdown, no explanation."""
 
@@ -61,8 +70,12 @@ def _from_trends() -> list[str]:
 Pick 10-15 that could become interesting short-form educational videos and convert each into a
 curiosity-driven video hook (45-second narrated videos over visuals).
 
+Whenever possible, reframe the hook in SECOND PERSON about the viewer's own body, brain, senses,
+or behavior — that format gets ~10x our normal views (e.g. turn a topic about sleep into
+"Why your brain replays embarrassing moments at 3am").
+
 Skip: breaking news, celebrity gossip, sports scores, political events.
-Focus on: science, psychology, history, money, life hacks, nature, surprising facts.
+Focus on: the human body, the brain, the senses, psychology, surprising science, money, nature.
 
 Return ONLY a JSON array of strings. No markdown."""
 
