@@ -144,11 +144,40 @@ def upload_to_tiktok(video_path: str, caption: str, tags: list[str]) -> bool:
             browser.close()
             return False
 
-        # Wait for upload to finish before force-closing
-        print("[tiktok] Waiting 30s for post to complete...")
-        time.sleep(30)
+        # ── Verify the post actually landed ──────────────────────────
+        # On success TikTok redirects away from /upload to the content
+        # manager and/or shows a "your video is being uploaded" toast.
+        # We only report success if we observe one of those signals —
+        # never a blind "assume it worked".
+        print("[tiktok] Verifying post...")
+        posted = False
+        for _ in range(30):  # up to ~60s
+            time.sleep(2)
+            try:
+                url = page.url or ""
+                if "upload" not in url:
+                    print(f"[tiktok] Confirmed — redirected to {url}")
+                    posted = True
+                    break
+                seen_toast = page.evaluate("""
+                    () => {
+                        const t = document.body.innerText.toLowerCase();
+                        return t.includes('your video is being uploaded')
+                            || t.includes('your videos')
+                            || t.includes('manage your posts')
+                            || t.includes('view profile');
+                    }
+                """)
+                if seen_toast:
+                    print("[tiktok] Confirmed — success toast detected.")
+                    posted = True
+                    break
+            except Exception:
+                pass
 
-        # Force-close the browser — bypasses all beforeunload/exit dialogs
         browser.close()
-        print("[tiktok] Done — check your TikTok profile to confirm.")
-        return True
+        if posted:
+            print("[tiktok] Upload confirmed.")
+        else:
+            print("[tiktok] Could NOT confirm the post landed — treating as FAILED.")
+        return posted

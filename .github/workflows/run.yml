@@ -12,15 +12,15 @@ on:
 jobs:
   post:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     permissions:
       contents: write
 
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5.6.0
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
           cache: pip
@@ -58,6 +58,8 @@ jobs:
           FAL_KEY: ${{ secrets.FAL_KEY }}
           CHANNEL_NAME: ${{ secrets.CHANNEL_NAME }}
           NICHE: ${{ secrets.NICHE }}
+          ALERT_WEBHOOK: ${{ secrets.ALERT_WEBHOOK }}
+          FAL_MAX_IMAGES: ${{ secrets.FAL_MAX_IMAGES }}
           TIKTOK_HEADLESS: "1"
         run: python main.py --batch 1 --youtube
 

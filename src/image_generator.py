@@ -1,4 +1,9 @@
-"""Generate AI images — Imagen 3 (Google) primary, Pollinations fallback."""
+"""Generate portrait images per sentence.
+
+Priority chain: Flux-Realism (fal.ai, paid) → Pexels photo (free) → Pollinations (free).
+Set FAL_MAX_IMAGES to cap how many paid Flux calls a single run may make
+(the rest fall through to the free sources); unset = no cap.
+"""
 
 from __future__ import annotations
 import os
@@ -79,40 +84,6 @@ def _fetch_flux(prompt: str, index: int, output_dir: str) -> str | None:
     return None
 
 
-def _fetch_imagen(prompt: str, index: int, output_dir: str) -> str | None:
-    """Generate image using Google Imagen 3 via Gemini API."""
-    api_key = os.environ.get("GEMINI_API_KEY", "")
-    if not api_key:
-        return None
-    try:
-        from google import genai
-        from google.genai import types
-
-        client = genai.Client(api_key=api_key)
-        full_prompt = (
-            f"{prompt}, pure black background, cinematic 3D render style, "
-            "dramatic studio lighting, deep shadows, hyper-detailed, dark luxury aesthetic, no text"
-        )
-        result = client.models.generate_images(
-            model="imagen-3.0-generate-001",
-            prompt=full_prompt,
-            config=types.GenerateImagesConfig(
-                number_of_images=1,
-                aspect_ratio="9:16",
-                safety_filter_level="block_only_high",
-            ),
-        )
-        if result.generated_images:
-            image_bytes = result.generated_images[0].image.image_bytes
-            path = os.path.join(output_dir, f"gen_{index:02d}.jpg")
-            with open(path, "wb") as f:
-                f.write(image_bytes)
-            return path
-    except Exception as e:
-        print(f"[images] Imagen 3 error on image {index}: {e}")
-    return None
-
-
 def _fetch_pollinations(prompt: str, index: int, output_dir: str) -> str | None:
     """Generate image using Pollinations.ai (free fallback)."""
     full = f"{prompt}, cinematic photography, sharp focus, vibrant colors, professional lighting, ultra-detailed, photorealistic, 8k, no text, no watermark, vertical portrait"
@@ -147,8 +118,8 @@ def generate_images(
     """Generate portrait images for each prompt. Returns paths in order.
 
     Priority chain per image:
-      1. Pexels photo search (free, real photography) — if search_query provided
-      2. Flux.1-dev via fal.ai (paid AI) — if FAL_KEY set
+      1. Flux-Realism via fal.ai (paid AI) — if FAL_KEY set, up to FAL_MAX_IMAGES
+      2. Pexels photo search (free, real photography) — if search_query provided
       3. Pollinations.ai (free fallback)
     """
     if not prompts:
@@ -157,6 +128,13 @@ def generate_images(
 
     use_flux = bool(os.environ.get("FAL_KEY"))
     use_pexels = bool(os.environ.get("PEXELS_API_KEY")) and bool(search_queries)
+
+    # Optional hard cap on paid Flux calls per run (cost guardrail).
+    try:
+        flux_budget = int(os.environ.get("FAL_MAX_IMAGES", "0"))
+    except ValueError:
+        flux_budget = 0
+    flux_used = 0
 
     sources = []
     if use_flux:
@@ -175,12 +153,16 @@ def generate_images(
         query = (search_queries[i] if search_queries and i < len(search_queries) else "") or ""
 
         # 1. Flux — cinematic AI generation, purpose-built for each sentence
-        if use_flux:
+        within_budget = flux_budget <= 0 or flux_used < flux_budget
+        if use_flux and within_budget:
             path = _fetch_flux(prompt, i, output_dir)
             if path:
+                flux_used += 1
                 print(f"[images] [{i+1}/{len(prompts)}] Flux ✓")
             else:
                 print(f"[images] [{i+1}/{len(prompts)}] Flux failed, trying fallback...")
+        elif use_flux and not within_budget:
+            print(f"[images] [{i+1}/{len(prompts)}] Flux budget ({flux_budget}) reached — using free sources")
 
         # 2. Pexels — real photography fallback
         if not path and use_pexels and query:

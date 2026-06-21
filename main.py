@@ -3,7 +3,7 @@ Automated TikTok/YouTube Shorts pipeline:
   1. Pick topic (Google Trends → Claude fallback, wealth niche)
   2. Generate script with Claude (includes image prompts, mood, hook)
   3. Generate voiceover with Edge TTS (random voice each video)
-  4. Generate AI images via Imagen 3 (Pollinations fallback, Pexels last resort)
+  4. Generate AI images via Flux-Realism (Pexels fallback, Pollinations last resort)
   5. Build MP4 (karaoke captions + mood music + SFX + hook overlay)
   6. Generate YouTube thumbnail
   7. Upload to TikTok and/or YouTube Shorts (failed uploads queued for retry)
@@ -31,9 +31,9 @@ load_dotenv()
 
 from src.script_generator import generate_script
 from src.voiceover import generate_voiceover
-from src.stock_video import search_and_download_clips
 from src.video_editor import build_video
 from src.topic_picker import get_next_topic
+from src.notify import notify
 
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "output")
 LOG_FILE = os.path.join(OUTPUT_DIR, "upload_log.csv")
@@ -70,26 +70,15 @@ def run_pipeline(
     audio_path = os.path.join(OUTPUT_DIR, "audio", f"voiceover_{run_id}.mp3")
     generate_voiceover(script["narration"], audio_path)
 
-    # ── Step 3: Visuals (rotating style) ────────────────────────
-    style = _pick_style()
-    print(f"\n[3/6] Generating visuals [{style}]...")
+    # ── Step 3: Visuals ──────────────────────────────────────────
+    # AI images (Flux → Pexels → Pollinations) are the production style;
+    # kinetic text cards are the always-works fallback if image gen returns
+    # nothing (e.g. all sources down or out of budget).
+    print("\n[3/6] Generating visuals [ai_images]...")
     clip_paths = []
     image_prompts = script.get("image_prompts", [])
 
-    if style == "kinetic":
-        from src.kinetic_generator import generate_kinetic_clips
-        clip_paths = generate_kinetic_clips(script, os.path.join(OUTPUT_DIR, "images", run_id))
-
-    elif style == "stock":
-        from src.stock_video import fetch_scene_clips
-        queries = script.get("stock_queries") or script.get("keywords") or [script["title"]]
-        clip_paths = fetch_scene_clips(queries, os.path.join(OUTPUT_DIR, "clips", run_id))
-
-    elif style == "kling" and image_prompts:
-        from src.kling_generator import generate_kling_clips
-        clip_paths = generate_kling_clips(image_prompts, os.path.join(OUTPUT_DIR, "images", run_id))
-
-    elif style == "ai_images" and image_prompts:
+    if image_prompts:
         from src.image_generator import generate_images
         search_queries = [
             s.get("search_query", "") for s in script.get("narration_segments", [])
@@ -101,10 +90,8 @@ def run_pipeline(
             search_queries=search_queries or None,
         )
 
-    # Fallback: kinetic always works
     if not clip_paths:
-        if style != "kinetic":
-            print(f"      [{style}] returned no clips — falling back to kinetic.")
+        print("      Image generation returned no clips — falling back to kinetic cards.")
         from src.kinetic_generator import generate_kinetic_clips
         clip_paths = generate_kinetic_clips(script, os.path.join(OUTPUT_DIR, "images", run_id))
 
@@ -159,6 +146,8 @@ def run_pipeline(
         )
         if tiktok_ok:
             print("[tiktok] Upload complete.")
+        else:
+            notify(f"TikTok upload could not be confirmed for: {script['title']}")
 
     if upload_youtube:
         from src.youtube_uploader import upload_short
@@ -186,8 +175,10 @@ def run_pipeline(
                     privacy=privacy,
                     thumbnail_path=thumbnail_path,
                 )
+                notify(f"YouTube upload failed (queued for retry): {script['title']} — {err}")
             else:
                 print(f"[youtube] Not retryable: {err}")
+                notify(f"YouTube upload failed (NOT retryable): {script['title']} — {err}")
 
     if not upload_tiktok and not upload_youtube:
         print(f"  Video saved: {output_path}")
@@ -195,11 +186,11 @@ def run_pipeline(
     # ── Log ──────────────────────────────────────────────────────
     _log_upload(script["title"], youtube_url, tiktok_ok)
 
+    # Alert if a scheduled run posted to nothing — the silent-outage guard.
+    if (upload_tiktok or upload_youtube) and not tiktok_ok and not youtube_url:
+        notify(f"Run posted to NOTHING: '{script['title']}' — both platforms failed.")
+
     print("\nDone!")
-
-
-def _pick_style() -> str:
-    return "ai_images"
 
 
 def _log_upload(title: str, youtube_url: str, tiktok_ok: bool) -> None:
@@ -248,9 +239,13 @@ if __name__ == "__main__":
             print(f"\nWaiting {args.interval} minutes before next video...")
             time.sleep(args.interval * 60)
 
-        run_pipeline(
-            topic=args.topic if args.batch == 1 else None,
-            upload_tiktok=not args.no_tiktok and not args.no_upload,
-            upload_youtube=args.youtube and not args.no_upload,
-            privacy=args.privacy,
-        )
+        try:
+            run_pipeline(
+                topic=args.topic if args.batch == 1 else None,
+                upload_tiktok=not args.no_tiktok and not args.no_upload,
+                upload_youtube=args.youtube and not args.no_upload,
+                privacy=args.privacy,
+            )
+        except Exception as e:
+            notify(f"Pipeline CRASHED before posting: {type(e).__name__}: {e}")
+            raise

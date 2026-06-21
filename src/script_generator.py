@@ -17,7 +17,7 @@ Write a script about: "{topic}"
 THE NON-NEGOTIABLES:
 1. First sentence: one shocking claim stated as pure fact. No question marks. No "did you know". Just the claim, dropped like a bomb.
 2. Every reveal must be MORE surprising than the last. Stack them. The viewer should feel like they're tumbling downhill.
-3. Real specificity only. "Harvard researchers" not "scientists." "11 minutes" not "a few minutes." "1973" not "decades ago." Made-up specifics are fine — they sell the story.
+3. Real specificity only. "Harvard researchers" not "scientists." "11 minutes" not "a few minutes." "1973" not "decades ago." Every specific — names, numbers, dates, studies — must be factually TRUE and verifiable. Never invent facts. If you're unsure a detail is real, pick a different real one rather than fabricate. Accuracy is what keeps the channel alive on both platforms.
 4. Zero filler words. No "basically", "actually", "so", "well". Every word earns its place.
 5. Sentence length: short. Medium. Short. Short. Vary it. Create rhythm.
 6. The payoff must reframe everything they just heard — a twist that makes the hook mean something completely different.
