@@ -10,6 +10,22 @@ UPLOAD_URL = "https://www.tiktok.com/upload"
 
 
 def upload_to_tiktok(video_path: str, caption: str, tags: list[str]) -> bool:
+    """Attempt the TikTok upload up to twice; return True only if confirmed."""
+    for attempt in range(1, 3):
+        print(f"[tiktok] Upload attempt {attempt}/2...")
+        try:
+            if _attempt_upload(video_path, caption, tags):
+                return True
+        except Exception as e:
+            print(f"[tiktok] Attempt {attempt} errored: {e}")
+        if attempt < 2:
+            print("[tiktok] Retrying in 15s...")
+            time.sleep(15)
+    print("[tiktok] All attempts failed.")
+    return False
+
+
+def _attempt_upload(video_path: str, caption: str, tags: list[str]) -> bool:
     """
     Upload a video to TikTok using a persistent browser profile.
 
@@ -96,23 +112,41 @@ def upload_to_tiktok(video_path: str, caption: str, tags: list[str]) -> bool:
             return False
 
         # ── Wait for TikTok to finish reviewing the video ───────────
+        # Headless uploads in CI can take a while to finish processing. We
+        # wait up to ~4 min and treat the Post button as ready only when it
+        # is truly enabled (TikTok marks it disabled via the `disabled`
+        # property, `aria-disabled`, OR a CSS class while processing).
         print("[tiktok] Waiting for TikTok to finish reviewing video...")
-        for i in range(60):  # wait up to 60 seconds
+        ready = False
+        for i in range(120):  # wait up to ~240 seconds
             time.sleep(2)
             try:
-                # Post button is enabled once review is done
-                is_ready = page.evaluate("""
-                    const btns = [...document.querySelectorAll('button')];
-                    const post = btns.find(b => b.innerText.trim() === 'Post');
-                    return post ? !post.disabled : false;
+                ready = page.evaluate("""
+                    () => {
+                        const btns = [...document.querySelectorAll('button')];
+                        const post = btns.find(b => b.innerText.trim() === 'Post');
+                        if (!post) return false;
+                        const aria = post.getAttribute('aria-disabled');
+                        const cls = (post.className || '').toLowerCase();
+                        const looksDisabled =
+                            post.disabled ||
+                            aria === 'true' ||
+                            cls.includes('disabled');
+                        return !looksDisabled;
+                    }
                 """)
-                if is_ready:
+                if ready:
                     print(f"[tiktok] Video ready after {(i+1)*2}s.")
                     break
             except Exception:
                 pass
-        else:
-            print("[tiktok] Timed out waiting — attempting post anyway.")
+
+        if not ready:
+            # Don't fire a broken "post anyway" — that creates empty/failed
+            # posts and false success. Bail so the run can retry cleanly.
+            print("[tiktok] Post never became ready — aborting this attempt.")
+            browser.close()
+            return False
 
         # ── Set caption via JavaScript (bypasses React modal issues) ─
         tag_str = " ".join(f"#{t.replace(' ', '')}" for t in tags[:5])
