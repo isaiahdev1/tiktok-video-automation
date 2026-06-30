@@ -22,7 +22,9 @@ jobs:
           # Use a real-user PAT so the queue commit below counts as repo
           # activity and resets GitHub's 60-day scheduled-workflow disable timer.
           # (Commits by the built-in GITHUB_TOKEN / github-actions[bot] do NOT count.)
-          token: ${{ secrets.KEEPALIVE_PAT }}
+          # Falls back to the default token if the PAT secret is missing/empty,
+          # so the workflow NEVER breaks — it just won't keepalive until the PAT is set.
+          token: ${{ secrets.KEEPALIVE_PAT || github.token }}
           persist-credentials: true
 
       - name: Set up Python
