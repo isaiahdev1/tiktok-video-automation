@@ -1,10 +1,24 @@
-"""Transcribe voiceover and burn karaoke captions — viral TikTok style."""
+"""Transcribe voiceover and burn captions — viral TikTok style.
+
+Two on-screen layers are produced here:
+  1. A bold HOOK title card over the opening ~2.2s (top-center). This is the
+     single biggest retention lever — the first frame is what stops the scroll.
+     (It was previously accepted as a param but never rendered — dead code.)
+  2. Karaoke captions: 3-word phrases in the lower third with the currently
+     spoken word popped in bright yellow + scaled up. The active-word highlight
+     is what separates a native-feeling clip from generic AI-slop captions.
+"""
 
 from __future__ import annotations
 import os
 import tempfile
 
 _model = None
+
+# How long the hook title card stays on screen (seconds).
+HOOK_DURATION = 2.2
+# Words shown together in the lower-third karaoke line.
+WORDS_PER_LINE = 3
 
 
 def _get_model():
@@ -32,19 +46,20 @@ def transcribe_words(audio_path: str) -> list[dict]:
 def generate_ass(
     words: list[dict],
     hook_text: str = "",
-    words_per_line: int = 1,
+    words_per_line: int = WORDS_PER_LINE,
     channel_name: str = "",
     total_duration: float = 0.0,
 ) -> str:
     """
-    Burn minimal captions:
-    - 1 word at a time, centered in lower frame
-    - All white — no yellow highlight
-    - Thick black outline, drop shadow — readable over any footage
+    Build the ASS subtitle file:
+    - Hook title card (top-center) over the first HOOK_DURATION seconds
+    - Karaoke captions (lower third), N words per line, active word highlighted
     """
-    # ASS color format: &HAABBGGRR&
-    WHITE = "&H00FFFFFF&"
-    BLACK = "&H00000000&"
+    # ASS colour format is &HAABBGGRR& (alpha, blue, green, red).
+    WHITE     = "&H00FFFFFF&"
+    BLACK     = "&H00000000&"
+    HIGHLIGHT = "&H0000F2FF&"  # punchy yellow for the active word (RGB #FFF200)
+    SHADOW    = "&H88000000"
 
     header = (
         "[Script Info]\n"
@@ -59,9 +74,13 @@ def generate_ass(
         "ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
         "Alignment, MarginL, MarginR, MarginV, Encoding\n"
 
-        # Main captions — white, bold, thick outline, lower-center
-        f"Style: Cap,Arial Black,110,{WHITE},{WHITE},{BLACK},"
-        "&H88000000,-1,0,0,0,100,100,2,0,1,8,3,2,50,50,480,1\n\n"
+        # Karaoke captions — white, bold, thick outline, lower-center (align 2)
+        f"Style: Cap,Arial Black,86,{WHITE},{WHITE},{BLACK},"
+        f"{SHADOW},-1,0,0,0,100,100,1,0,1,7,3,2,60,60,470,1\n"
+
+        # Hook title card — bigger, top-center (align 8), heavy outline
+        f"Style: Hook,Arial Black,96,{WHITE},{WHITE},{BLACK},"
+        f"{SHADOW},-1,0,0,0,100,100,1,0,1,9,4,8,80,80,300,1\n\n"
 
         "[Events]\n"
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
@@ -69,20 +88,41 @@ def generate_ass(
 
     events = []
 
-    # One word at a time, all white
-    for i in range(0, len(words), words_per_line):
+    # ── Hook title card (first ~2.2s) ────────────────────────────────
+    hook = (hook_text or "").strip().upper()
+    if hook:
+        # Soft fade in/out so it doesn't just snap on/off.
+        events.append(
+            f"Dialogue: 1,{_fmt(0.0)},{_fmt(HOOK_DURATION)},Hook,,0,0,0,,"
+            f"{{\\fad(150,200)}}{_escape(hook)}"
+        )
+
+    # ── Karaoke captions with active-word highlight ──────────────────
+    n = len(words)
+    for i in range(0, n, words_per_line):
         chunk = words[i: i + words_per_line]
 
         for j, word_data in enumerate(chunk):
             start = word_data["start"]
-            end   = word_data["end"]
-            end   = max(end, start + 0.25)
+            end   = max(word_data["end"], start + 0.20)
 
-            # Extend last word of chunk to next chunk's start (no gap)
-            if j == len(chunk) - 1 and i + words_per_line < len(words):
-                end = max(end, words[i + words_per_line]["start"])
+            # Extend the active word to the next word's start (no flicker gap).
+            global_idx = i + j
+            if global_idx + 1 < n:
+                end = max(end, words[global_idx + 1]["start"])
 
-            text = "  ".join(w["word"].upper() for w in chunk)
+            # Render the whole chunk; the active word gets colour + scale pop.
+            parts = []
+            for k, w in enumerate(chunk):
+                token = _escape(w["word"].upper())
+                if k == j:
+                    parts.append(
+                        f"{{\\c{HIGHLIGHT}\\fscx116\\fscy116}}{token}{{\\r}}"
+                    )
+                else:
+                    parts.append(token)
+            text = "  ".join(parts)
+
             events.append(
                 f"Dialogue: 0,{_fmt(start)},{_fmt(end)},Cap,,0,0,0,,{text}"
             )
@@ -92,6 +132,11 @@ def generate_ass(
     with open(path, "w", encoding="utf-8") as f:
         f.write(header + "\n".join(events))
     return path
+
+
+def _escape(text: str) -> str:
+    """Escape characters that ASS treats as override syntax."""
+    return text.replace("\\", "\\\\").replace("{", "\\{").replace("}", "\\}")
 
 
 def _fmt(s: float) -> str:

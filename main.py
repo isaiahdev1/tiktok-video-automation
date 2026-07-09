@@ -14,12 +14,18 @@ Flags:
   --stats           Print channel analytics and exit
   --batch N         Produce N videos sequentially
   --no-upload       Build videos locally without uploading
+  --keep-intermediates  Keep per-run clips/images (default: auto-purge to save disk)
+
+Note: by default each run deletes its own output/clips/<id> and output/images/<id>
+scratch once the MP4 is built (output/final/ is kept). This prevents the clips
+folder from filling the disk (it hit 15 GB twice in June 2026).
 """
 
 from __future__ import annotations
 import csv
 import os
 import random
+import shutil
 import sys
 import time
 import uuid
@@ -44,6 +50,7 @@ def run_pipeline(
     upload_tiktok: bool = True,
     upload_youtube: bool = False,
     privacy: str = "public",
+    keep_intermediates: bool = False,
 ) -> None:
     run_id = uuid.uuid4().hex[:8]
 
@@ -122,6 +129,12 @@ def run_pipeline(
     if os.path.exists(audio_path):
         os.unlink(audio_path)
 
+    # Cleanup this run's intermediate visuals — the MP4 is built, so the
+    # source clips/images are dead weight. (output/clips/ ballooned to 15 GB
+    # twice and filled the disk; the final video lives in output/final/.)
+    if not keep_intermediates:
+        _cleanup_run_artifacts(run_id)
+
     # ── Step 5: Thumbnail ────────────────────────────────────────
     print("\n[5/6] Generating thumbnail...")
     thumbnail_path = None
@@ -193,6 +206,28 @@ def run_pipeline(
     print("\nDone!")
 
 
+def _cleanup_run_artifacts(run_id: str) -> None:
+    """Remove a run's intermediate scratch (downloaded clips + generated images).
+
+    These accumulate per-run under output/clips/<run_id> and output/images/<run_id>
+    and never get reused — the finished video is already in output/final/. Left
+    unchecked they fill the disk (15 GB twice in June 2026). Safe + best-effort.
+    """
+    freed = 0
+    for sub in ("clips", "images"):
+        run_dir = os.path.join(OUTPUT_DIR, sub, run_id)
+        if os.path.isdir(run_dir):
+            for root, _dirs, files in os.walk(run_dir):
+                for fn in files:
+                    try:
+                        freed += os.path.getsize(os.path.join(root, fn))
+                    except OSError:
+                        pass
+            shutil.rmtree(run_dir, ignore_errors=True)
+    if freed:
+        print(f"      Cleaned {freed / 1024 / 1024:.0f} MB of intermediate clips/images.")
+
+
 def _log_upload(title: str, youtube_url: str, tiktok_ok: bool) -> None:
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     write_header = not os.path.exists(LOG_FILE)
@@ -218,6 +253,7 @@ if __name__ == "__main__":
         default="public", help="YouTube privacy (default: public)"
     )
     parser.add_argument("--no-upload", action="store_true", help="Skip all uploads, save locally")
+    parser.add_argument("--keep-intermediates", action="store_true", help="Keep per-run clips/images scratch (default: auto-delete to save disk)")
     parser.add_argument("--batch", type=int, default=1, help="Number of videos to produce (default: 1)")
     parser.add_argument("--interval", type=int, default=5, help="Minutes between batch videos (default: 5)")
     parser.add_argument("--retry-youtube", action="store_true", help="Retry all queued YouTube uploads and exit")
@@ -245,6 +281,7 @@ if __name__ == "__main__":
                 upload_tiktok=not args.no_tiktok and not args.no_upload,
                 upload_youtube=args.youtube and not args.no_upload,
                 privacy=args.privacy,
+                keep_intermediates=args.keep_intermediates,
             )
         except Exception as e:
             notify(f"Pipeline CRASHED before posting: {type(e).__name__}: {e}")

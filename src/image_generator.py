@@ -128,6 +128,7 @@ def generate_images(
 
     use_flux = bool(os.environ.get("FAL_KEY"))
     use_pexels = bool(os.environ.get("PEXELS_API_KEY")) and bool(search_queries)
+    prefer_ai = bool(os.environ.get("PREFER_AI_IMAGES"))  # free AI (Pollinations) before stock (Pexels)
 
     # Optional hard cap on paid Flux calls per run (cost guardrail).
     try:
@@ -164,17 +165,20 @@ def generate_images(
         elif use_flux and not within_budget:
             print(f"[images] [{i+1}/{len(prompts)}] Flux budget ({flux_budget}) reached — using free sources")
 
-        # 2. Pexels — real photography fallback
-        if not path and use_pexels and query:
-            path = _fetch_pexels_photo(query, i, output_dir)
+        # 2 & 3. Free fallbacks. With PREFER_AI_IMAGES, try Pollinations (custom AI, on-prompt)
+        # BEFORE Pexels (generic stock) — an on-brand look without the paid Flux calls.
+        order = ["pollinations", "pexels"] if prefer_ai else ["pexels", "pollinations"]
+        for src in order:
             if path:
-                print(f"[images] [{i+1}/{len(prompts)}] Pexels ✓")
-
-        # 3. Pollinations — free last resort
-        if not path:
-            path = _fetch_pollinations(prompt, i, output_dir)
-            if path:
-                print(f"[images] [{i+1}/{len(prompts)}] Pollinations ✓")
+                break
+            if src == "pexels" and use_pexels and query:
+                path = _fetch_pexels_photo(query, i, output_dir)
+                if path:
+                    print(f"[images] [{i+1}/{len(prompts)}] Pexels ✓")
+            elif src == "pollinations":
+                path = _fetch_pollinations(prompt, i, output_dir)
+                if path:
+                    print(f"[images] [{i+1}/{len(prompts)}] Pollinations ✓")
 
         if path:
             paths.append(path)

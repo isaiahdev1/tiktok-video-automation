@@ -80,7 +80,7 @@ Focus on: the human body, the brain, the senses, psychology, surprising science,
 Return ONLY a JSON array of strings. No markdown."""
 
         msg = client.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model="claude-sonnet-5",
             max_tokens=1024,
             messages=[{"role": "user", "content": prompt}],
         )
@@ -106,7 +106,7 @@ Return ONLY a JSON array of strings. No markdown."""
 def _from_claude() -> list[str]:
     client = anthropic.Anthropic()
     msg = client.messages.create(
-        model="claude-haiku-4-5-20251001",
+        model="claude-sonnet-5",
         max_tokens=2048,
         messages=[{"role": "user", "content": _CLAUDE_PROMPT}],
     )

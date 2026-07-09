@@ -3,25 +3,18 @@
 from __future__ import annotations
 import asyncio
 import os
-import random
 import requests
 
 
-# ElevenLabs voice IDs — varied for channel variety
-_EL_VOICES = [
-    "pNInz6obpgDQGcFmaJgB",  # Adam  — deep, authoritative
-    "TxGEqnHWrfWFTfGW9XjX",  # Josh  — warm, conversational
-    "ErXwobaYiN019PkySvjV",  # Antoni — natural, engaging
-    "21m00Tcm4TlvDq8ikWAM",  # Rachel — clear, calm
-]
+# ONE consistent channel voice. A recognizable voice is part of channel
+# identity — randomizing it every video (the old behaviour) trained the
+# audience to hear a different narrator each time and killed recall. Default is
+# Adam (deep, authoritative — suits fact content); override with the
+# ELEVENLABS_VOICE_ID env var (already present in .env but previously ignored).
+_DEFAULT_VOICE = "pNInz6obpgDQGcFmaJgB"  # Adam
 
-# Edge TTS voices (fallback)
-_EDGE_VOICES = [
-    "en-US-AndrewNeural",
-    "en-US-BrianNeural",
-    "en-US-ChristopherNeural",
-    "en-US-GuyNeural",
-]
+# Edge TTS fallback — one consistent voice (Andrew: warm, natural).
+_EDGE_VOICE = "en-US-AndrewNeural"
 
 
 def generate_voiceover(text: str, output_path: str) -> str:
@@ -38,8 +31,9 @@ def generate_voiceover(text: str, output_path: str) -> str:
 
 
 def _elevenlabs(text: str, output_path: str, api_key: str) -> str:
-    voice_id = random.choice(_EL_VOICES)
-    print(f"[voiceover] ElevenLabs voice: {voice_id}")
+    voice_id = os.environ.get("ELEVENLABS_VOICE_ID") or _DEFAULT_VOICE
+    model_id = os.environ.get("ELEVENLABS_MODEL_ID") or "eleven_multilingual_v2"
+    print(f"[voiceover] ElevenLabs voice: {voice_id} ({model_id})")
 
     resp = requests.post(
         f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
@@ -50,11 +44,13 @@ def _elevenlabs(text: str, output_path: str, api_key: str) -> str:
         },
         json={
             "text": text,
-            "model_id": "eleven_multilingual_v2",
+            "model_id": model_id,
+            # Lower stability + higher style = more dynamic, expressive delivery
+            # (flat narration is a big reason AI-slop videos get scrolled past).
             "voice_settings": {
-                "stability": 0.32,
-                "similarity_boost": 0.78,
-                "style": 0.42,
+                "stability": 0.30,
+                "similarity_boost": 0.80,
+                "style": 0.50,
                 "use_speaker_boost": True,
             },
         },
@@ -71,7 +67,7 @@ def _elevenlabs(text: str, output_path: str, api_key: str) -> str:
 def _edge(text: str, output_path: str) -> str:
     import edge_tts
 
-    voice = random.choice(_EDGE_VOICES)
+    voice = _EDGE_VOICE
     print(f"[voiceover] Edge TTS voice: {voice}")
 
     async def _run():
