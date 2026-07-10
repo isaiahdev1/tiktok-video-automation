@@ -103,7 +103,11 @@ Respond ONLY with valid JSON, no markdown:
             else:
                 raise
 
-    raw = message.content[0].text.strip()
+    # Adaptive-thinking models may put a ThinkingBlock at content[0], so grab
+    # the first block that is actually text rather than assuming [0].
+    raw = next(
+        (b.text for b in message.content if getattr(b, "type", None) == "text"), ""
+    ).strip()
     if raw.startswith("```"):
         raw = raw.split("```")[1]
         if raw.startswith("json"):

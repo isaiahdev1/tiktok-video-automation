@@ -84,7 +84,7 @@ Return ONLY a JSON array of strings. No markdown."""
             max_tokens=1024,
             messages=[{"role": "user", "content": prompt}],
         )
-        raw_text = msg.content[0].text.strip()
+        raw_text = _text_of(msg).strip()
         if raw_text.startswith("```"):
             raw_text = raw_text.split("```")[1]
             if raw_text.startswith("json"):
@@ -110,12 +110,22 @@ def _from_claude() -> list[str]:
         max_tokens=2048,
         messages=[{"role": "user", "content": _CLAUDE_PROMPT}],
     )
-    raw = msg.content[0].text.strip()
+    raw = _text_of(msg).strip()
     if raw.startswith("```"):
         raw = raw.split("```")[1]
         if raw.startswith("json"):
             raw = raw[4:]
     return json.loads(raw.strip())
+
+
+def _text_of(msg) -> str:
+    """First text block of a response. Adaptive-thinking models (Sonnet 5,
+    Opus 4.8) may emit a ThinkingBlock at content[0], so never assume [0] is
+    text — grab the first block that actually is."""
+    for block in msg.content:
+        if getattr(block, "type", None) == "text":
+            return block.text
+    return ""
 
 
 def _load() -> list[str]:

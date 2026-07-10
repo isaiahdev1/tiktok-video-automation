@@ -292,7 +292,10 @@ Examples: "my brain just quietly filed for bankruptcy" / "bro said it like we we
 
 Return ONLY the comment."""}],
         )
-        return msg.content[0].text.strip().strip('"')
+        text = next(
+            (b.text for b in msg.content if getattr(b, "type", None) == "text"), ""
+        )
+        return text.strip().strip('"')
     except Exception as e:
         print(f"[yt] Comment gen error: {e}", flush=True)
         return None
